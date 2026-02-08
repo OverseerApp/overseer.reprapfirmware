@@ -11,6 +11,10 @@ public static class ServiceCollectionExtensions
       sp => machine => new RepRapFirmwareMachineProvider(machine)
     );
     
+    services.AddTransient<MachineProviderFactory<DuetSoftwareFrameworkMachine, DuetSoftwareFrameworkMachineProvider>>(
+      sp => machine => new DuetSoftwareFrameworkMachineProvider(machine)
+    );
+    
     return services;
   }
 }

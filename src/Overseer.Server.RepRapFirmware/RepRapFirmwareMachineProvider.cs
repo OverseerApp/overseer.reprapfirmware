@@ -167,7 +167,7 @@ public class RepRapFirmwareMachineProvider : IMachineProvider<RepRapFirmwareMach
       .ToDictionary(x => x.HeaterIndex);
   }
 
-  private static (int timeRemaining, double progress) CalculateCompletion(ObjectModel model, IEnumerable<Extruder> extruders, GCodeFileInfo file)
+  public static (int timeRemaining, double progress) CalculateCompletion(ObjectModel model, IEnumerable<Extruder> extruders, GCodeFileInfo file)
   {
     if (file?.Filament?.Count > 0)
     {
