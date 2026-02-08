@@ -10,6 +10,7 @@ namespace Overseer.Server.RepRapFirmware;
 public class RepRapFirmwareMachineProvider : IMachineProvider<RepRapFirmwareMachine>
 {
   private readonly RepRapFirmwareMachine _machine;
+  private readonly HttpClient _httpClient;
   private System.Timers.Timer? _timer;
   private CancellationTokenSource? _cancellation;
   private X509Certificate2Collection? _clientCertificateChain;
@@ -27,6 +28,22 @@ public class RepRapFirmwareMachineProvider : IMachineProvider<RepRapFirmwareMach
   public RepRapFirmwareMachineProvider(RepRapFirmwareMachine machine)
   {
     _machine = machine;
+    
+    // Create HttpClient with client certificate support
+    if (!string.IsNullOrWhiteSpace(machine.ClientCertificate))
+    {
+      var handler = new HttpClientHandler();
+      var cert = GetClientCertificate(machine.ClientCertificate);
+      if (cert != null)
+      {
+        handler.ClientCertificates.AddRange(cert);
+      }
+      _httpClient = new HttpClient(handler);
+    }
+    else
+    {
+      _httpClient = new HttpClient();
+    }
   }
 
   public void Start(int interval)
@@ -35,7 +52,6 @@ public class RepRapFirmwareMachineProvider : IMachineProvider<RepRapFirmwareMach
     _timer = new System.Timers.Timer(interval);
     _timer.Elapsed += async (sender, args) => await Poll();
     _timer.Start();
-    Task.Run(Poll);
   }
 
   public void Stop()
@@ -44,6 +60,7 @@ public class RepRapFirmwareMachineProvider : IMachineProvider<RepRapFirmwareMach
     _timer = null;
     _cancellation?.Cancel();
     _cancellation?.Dispose();
+    _httpClient?.Dispose();
   }
 
   public async Task PauseJob()
@@ -180,8 +197,8 @@ public class RepRapFirmwareMachineProvider : IMachineProvider<RepRapFirmwareMach
     if (model.Job?.TimesLeft?.Slicer != null && model.Job.TimesLeft?.Slicer > 0 && model.Job.Duration != null)
     {
       var estimatedTotal = model.Job.Duration + model.Job.TimesLeft?.Slicer;
-      var progress = model.Job?.TimesLeft?.Slicer / estimatedTotal * 100f;
-      return (model.Job?.TimesLeft?.Slicer ?? 0, Math.Max(0, Math.Round(progress ?? -1 * 100)));
+      var progress = model.Job.Duration / (double)estimatedTotal! * 100d;
+      return (model.Job?.TimesLeft?.Slicer ?? 0, Math.Max(0d, Math.Round((double)progress, 1)));
     }
 
     var fractionPrinted = model.Job?.FilePosition / file?.Size * 100f;
@@ -209,18 +226,7 @@ public class RepRapFirmwareMachineProvider : IMachineProvider<RepRapFirmwareMach
   {
     var password = string.IsNullOrWhiteSpace(_machine.Password) ? RepRapFirmwareMachine.DefaultPassword : _machine.Password;
     
-    using var httpClient = new HttpClient();
-    if (!string.IsNullOrWhiteSpace(_machine.ClientCertificate))
-    {
-      var handler = new HttpClientHandler();
-      var cert = GetClientCertificate(_machine.ClientCertificate);
-      if (cert != null)
-      {
-        handler.ClientCertificates.AddRange(cert);
-      }
-    }
-
-    var connectResponse = await FetchConnect(httpClient, password, cancellation);
+    var connectResponse = await FetchConnect(password, cancellation);
     
     var uriBuilder = new UriBuilder($"{_machine.Url}/{resource}");
     if (query != null && query.Count > 0)
@@ -232,7 +238,7 @@ public class RepRapFirmwareMachineProvider : IMachineProvider<RepRapFirmwareMach
     var request = new HttpRequestMessage(HttpMethod.Get, uriBuilder.Uri);
     request.Headers.Add("X-Session-Key", connectResponse.SessionKey.ToString());
 
-    var response = await httpClient.SendAsync(request, cancellation);
+    var response = await _httpClient.SendAsync(request, cancellation);
     response.EnsureSuccessStatusCode();
 
     var content = await response.Content.ReadAsStringAsync(cancellation);
@@ -246,8 +252,7 @@ public class RepRapFirmwareMachineProvider : IMachineProvider<RepRapFirmwareMach
   {
     var password = string.IsNullOrWhiteSpace(_machine.Password) ? RepRapFirmwareMachine.DefaultPassword : _machine.Password;
     
-    using var httpClient = new HttpClient();
-    var connectResponse = await FetchConnect(httpClient, password, cancellation);
+    var connectResponse = await FetchConnect(password, cancellation);
     
     var uriBuilder = new UriBuilder($"{_machine.Url}/{resource}");
     if (query != null && query.Count > 0)
@@ -259,14 +264,14 @@ public class RepRapFirmwareMachineProvider : IMachineProvider<RepRapFirmwareMach
     var request = new HttpRequestMessage(HttpMethod.Get, uriBuilder.Uri);
     request.Headers.Add("X-Session-Key", connectResponse.SessionKey.ToString());
 
-    var response = await httpClient.SendAsync(request, cancellation);
+    var response = await _httpClient.SendAsync(request, cancellation);
     response.EnsureSuccessStatusCode();
   }
 
-  private async Task<ConnectResponse> FetchConnect(HttpClient httpClient, string password, CancellationToken cancellation)
+  private async Task<ConnectResponse> FetchConnect(string password, CancellationToken cancellation)
   {
     var connectUri = $"{_machine.Url}/rr_connect?password={Uri.EscapeDataString(password)}&sessionKey=yes";
-    var connectResponseStr = await httpClient.GetStringAsync(connectUri, cancellation);
+    var connectResponseStr = await _httpClient.GetStringAsync(connectUri, cancellation);
     var connectResponse = JsonSerializer.Deserialize<ConnectResponse>(connectResponseStr, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
     
     if (connectResponse == null)

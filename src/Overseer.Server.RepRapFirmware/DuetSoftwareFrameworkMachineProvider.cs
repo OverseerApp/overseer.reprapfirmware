@@ -10,6 +10,7 @@ namespace Overseer.Server.RepRapFirmware;
 public class DuetSoftwareFrameworkMachineProvider : IMachineProvider<DuetSoftwareFrameworkMachine>
 {
   private readonly DuetSoftwareFrameworkMachine _machine;
+  private readonly HttpClient _httpClient;
   private ClientWebSocket? _webSocket;
   private CancellationTokenSource? _cancellationTokenSource;
   private MachineStatus? _lastStatus;
@@ -25,6 +26,7 @@ public class DuetSoftwareFrameworkMachineProvider : IMachineProvider<DuetSoftwar
   public DuetSoftwareFrameworkMachineProvider(DuetSoftwareFrameworkMachine machine)
   {
     _machine = machine;
+    _httpClient = new HttpClient();
   }
 
   public void Start(int interval)
@@ -40,6 +42,7 @@ public class DuetSoftwareFrameworkMachineProvider : IMachineProvider<DuetSoftwar
     _cancellationTokenSource?.Cancel();
     _cancellationTokenSource?.Dispose();
     _webSocket?.Dispose();
+    _httpClient?.Dispose();
   }
 
   public async Task PauseJob()
@@ -73,18 +76,17 @@ public class DuetSoftwareFrameworkMachineProvider : IMachineProvider<DuetSoftwar
       Port = 80,
     }.Uri.ToString();
 
-    using var client = new HttpClient();
-    var sessionKey = await GetSessionKey(client, updatedMachine);
+    var sessionKey = await GetSessionKey(_httpClient, updatedMachine);
     
     if (sessionKey != null)
     {
-      client.DefaultRequestHeaders.Remove("X-Session-Key");
-      client.DefaultRequestHeaders.Add("X-Session-Key", sessionKey);
+      _httpClient.DefaultRequestHeaders.Remove("X-Session-Key");
+      _httpClient.DefaultRequestHeaders.Add("X-Session-Key", sessionKey);
     }
 
     updatedMachine.WebSocketUri = new UriBuilder(updatedMachine.Url) { Path = "machine", Scheme = "ws" }.Uri;
 
-    var model = await client.GetFromJsonAsync<ObjectModel>(new UriBuilder(updatedMachine.Url) { Path = "machine/model" }.Uri);
+    var model = await _httpClient.GetFromJsonAsync<ObjectModel>(new UriBuilder(updatedMachine.Url) { Path = "machine/model" }.Uri);
     var tools = model?.Tools;
     var heat = model?.Heat;
 
@@ -112,18 +114,17 @@ public class DuetSoftwareFrameworkMachineProvider : IMachineProvider<DuetSoftwar
     if (string.IsNullOrWhiteSpace(command))
       throw new ArgumentException("Command cannot be null or empty.", nameof(command));
 
-    using var client = new HttpClient();
-    var sessionKey = await GetSessionKey(client, _machine);
+    var sessionKey = await GetSessionKey(_httpClient, _machine);
     
     if (sessionKey != null)
     {
-      client.DefaultRequestHeaders.Remove("X-Session-Key");
-      client.DefaultRequestHeaders.Add("X-Session-Key", sessionKey);
+      _httpClient.DefaultRequestHeaders.Remove("X-Session-Key");
+      _httpClient.DefaultRequestHeaders.Add("X-Session-Key", sessionKey);
     }
 
     var uri = new UriBuilder(_machine.Url!) { Path = "machine/code", Query = "async=true" }.Uri.ToString();
     var content = new StringContent(command, Encoding.UTF8, "text/plain");
-    await client.PostAsync(uri, content);
+    await _httpClient.PostAsync(uri, content);
   }
 
   private async Task<string?> GetSessionKey(HttpClient client, DuetSoftwareFrameworkMachine machine)
@@ -145,7 +146,7 @@ public class DuetSoftwareFrameworkMachineProvider : IMachineProvider<DuetSoftwar
         _webSocket?.Dispose();
         _webSocket = new ClientWebSocket();
 
-        var sessionKey = await GetSessionKey(new HttpClient(), _machine);
+        var sessionKey = await GetSessionKey(_httpClient, _machine);
         if (sessionKey == null)
         {
           await Task.Delay(5000, cancellationToken);

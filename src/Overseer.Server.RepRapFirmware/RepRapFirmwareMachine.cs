@@ -8,8 +8,6 @@ public class RepRapFirmwareMachine : Machine
 
   public override string MachineType => "RepRapFirmware";
 
-  public bool RequiresPassword { get; set; }
-
   public string? Password { get; set; }
 
   public string? Url { get; set; }
