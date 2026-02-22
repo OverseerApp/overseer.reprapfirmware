@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Overseer.Server.RepRapFirmware.Models;
+namespace Overseer.RepRapFirmware.Models;
 
 public enum RRFMachineStatus
 {

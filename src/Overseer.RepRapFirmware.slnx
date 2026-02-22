@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/Overseer.RepRapFirmware/">
+    <Project Path="Overseer.RepRapFirmware/Overseer.RepRapFirmware.csproj" />
+  </Folder>
+</Solution>
