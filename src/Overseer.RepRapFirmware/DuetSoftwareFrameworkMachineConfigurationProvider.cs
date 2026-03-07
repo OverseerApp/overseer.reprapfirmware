@@ -9,7 +9,7 @@ public class DuetSoftwareFrameworkMachineConfigurationProvider(IHttpClientFactor
 {
   public async Task<DuetSoftwareFrameworkMachine> Configure(Machine machine)
   {
-    var updatedMachine = (DuetSoftwareFrameworkMachine)machine;
+    var updatedMachine = new DuetSoftwareFrameworkMachine(machine);
 
     if (string.IsNullOrWhiteSpace(updatedMachine.Url))
       throw new InvalidOperationException("Machine URL is required");
@@ -30,7 +30,7 @@ public class DuetSoftwareFrameworkMachineConfigurationProvider(IHttpClientFactor
       httpClient.DefaultRequestHeaders.Add("X-Session-Key", sessionKey);
     }
 
-    updatedMachine.WebSocketUri = new UriBuilder(updatedMachine.Url) { Path = "machine", Scheme = "ws" }.Uri;
+    updatedMachine.WebSocketUri = new UriBuilder(updatedMachine.Url) { Path = "machine", Scheme = "ws" }.Uri.ToString();
 
     var model = await httpClient.GetFromJsonAsync<ObjectModel>(new UriBuilder(updatedMachine.Url) { Path = "machine/model" }.Uri);
     var tools = model?.Tools;

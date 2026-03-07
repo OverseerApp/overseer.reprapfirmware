@@ -15,19 +15,25 @@ public class DuetSoftwareFrameworkMachineProvider(IHttpClientFactory httpClientF
   private MachineStatus? _lastStatus;
   private readonly Lock _statusLock = new();
 
-  public override void Start<TMachine>(int interval, TMachine machine)
+  private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+  public override void Start<TMachine>(int _interval, TMachine machine)
   {
+    Machine = machine as DuetSoftwareFrameworkMachine ?? new DuetSoftwareFrameworkMachine(machine);
+
     _cancellationTokenSource?.Cancel();
     _cancellationTokenSource?.Dispose();
     _cancellationTokenSource = new CancellationTokenSource();
-    Task.Run(() => ConnectWebSocket(_cancellationTokenSource.Token));
+    _ = ConnectWebSocket(_cancellationTokenSource.Token);
   }
 
   public override void Stop()
   {
     _cancellationTokenSource?.Cancel();
     _cancellationTokenSource?.Dispose();
+    _cancellationTokenSource = null;
     _webSocket?.Dispose();
+    _webSocket = null;
   }
 
   protected override async Task ExecuteGCode(string command)
@@ -97,86 +103,97 @@ public class DuetSoftwareFrameworkMachineProvider(IHttpClientFactory httpClientF
 
   private async Task ReceiveMessages(CancellationToken cancellationToken)
   {
-    var buffer = new byte[1024 * 4];
-
-    while (_webSocket?.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
+    var webSocket = _webSocket;
+    while (webSocket?.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
     {
-      var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
-
-      if (result.MessageType == WebSocketMessageType.Close)
+      var buffer = new byte[4096];
+      using var ms = new MemoryStream();
+      WebSocketReceiveResult receiveResult;
+      do
       {
-        await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, cancellationToken);
-        break;
-      }
+        receiveResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+        if (receiveResult.MessageType == WebSocketMessageType.Close)
+          break;
 
-      var messageText = Encoding.UTF8.GetString(buffer, 0, result.Count);
+        ms.Write(buffer, 0, receiveResult.Count);
+      } while (!receiveResult.EndOfMessage);
+
+      var messageText = Encoding.UTF8.GetString(ms.ToArray());
       await HandleIncomingMessage(messageText, cancellationToken);
     }
   }
 
   async Task HandleIncomingMessage(string messageText, CancellationToken cancellationToken)
   {
-    await AcknowledgeMessage(cancellationToken);
-
-    if (string.IsNullOrWhiteSpace(messageText))
-      return;
-
-    if (Machine is null)
-      return;
-
-    var model = JsonSerializer.Deserialize<ObjectModel>(messageText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-    if (model == null)
-      return;
-
-    var nextStatus = new MachineStatus { MachineId = Machine.Id, State = MapState(model.State?.Status, _lastStatus?.State) };
-
-    if (model.Heat != null)
+    try
     {
-      nextStatus.Temperatures = ReadTemperatures(model.Heat);
-    }
-    else
-    {
-      nextStatus.Temperatures = _lastStatus?.Temperatures ?? [];
-    }
+      await AcknowledgeMessage(cancellationToken);
 
-    if (nextStatus.State == MachineState.Operational || nextStatus.State == MachineState.Paused)
-    {
-      nextStatus.ElapsedJobTime = model.Job?.Duration ?? _lastStatus?.ElapsedJobTime ?? 0;
-      var file = model.Job?.File;
+      if (string.IsNullOrWhiteSpace(messageText))
+        return;
 
-      if (file != null)
+      if (Machine is null)
+        return;
+
+      var model = JsonSerializer.Deserialize<ObjectModel>(messageText, _jsonOptions);
+
+      if (model == null)
+        return;
+
+      var nextStatus = new MachineStatus { MachineId = Machine.Id, State = MapState(model.State?.Status, _lastStatus?.State) };
+
+      if (model.Heat != null)
       {
-        var extruders = model.Move?.Extruders ?? new List<Extruder>();
-        var (timeRemaining, progress) = CalculateCompletion(model, extruders, file);
-        nextStatus.Progress = progress;
-        nextStatus.EstimatedTimeRemaining = timeRemaining;
+        nextStatus.Temperatures = ReadTemperatures(model.Heat);
       }
       else
       {
-        nextStatus.Progress = _lastStatus?.Progress ?? 0;
-        nextStatus.EstimatedTimeRemaining = _lastStatus?.EstimatedTimeRemaining ?? 0;
+        nextStatus.Temperatures = _lastStatus?.Temperatures ?? [];
       }
-    }
 
-    lock (_statusLock)
+      if (nextStatus.State == MachineState.Operational || nextStatus.State == MachineState.Paused)
+      {
+        nextStatus.ElapsedJobTime = model.Job?.Duration ?? _lastStatus?.ElapsedJobTime ?? 0;
+        var file = model.Job?.File;
+
+        if (file != null)
+        {
+          var extruders = model.Move?.Extruders ?? new List<Extruder>();
+          var (timeRemaining, progress) = CalculateCompletion(model, extruders, file);
+          nextStatus.Progress = progress;
+          nextStatus.EstimatedTimeRemaining = timeRemaining;
+        }
+        else
+        {
+          nextStatus.Progress = _lastStatus?.Progress ?? 0;
+          nextStatus.EstimatedTimeRemaining = _lastStatus?.EstimatedTimeRemaining ?? 0;
+        }
+      }
+
+      lock (_statusLock)
+      {
+        if (_lastStatus != null && _lastStatus.Equals(nextStatus))
+          return;
+
+        _lastStatus = nextStatus;
+      }
+
+      OnStatusUpdated(nextStatus);
+    }
+    catch (Exception ex)
     {
-      if (_lastStatus != null && _lastStatus.Equals(nextStatus))
-        return;
-
-      _lastStatus = nextStatus;
+      Log.Error("Error handling incoming message", ex);
     }
-
-    OnStatusUpdated(nextStatus);
   }
 
   async Task AcknowledgeMessage(CancellationToken cancellationToken)
   {
-    if (_webSocket == null)
+    var webSocket = _webSocket;
+    if (webSocket == null || webSocket.State != WebSocketState.Open)
       return;
 
     var message = new ArraySegment<byte>(Encoding.UTF8.GetBytes("OK\n"));
-    await _webSocket.SendAsync(message, WebSocketMessageType.Text, true, cancellationToken);
+    await webSocket.SendAsync(message, WebSocketMessageType.Text, true, cancellationToken);
   }
 
   protected override Dictionary<int, MachineTemperatureStatus> ReadTemperatures(Heat heat)

@@ -1,3 +1,4 @@
+using log4net;
 using Overseer.RepRapFirmware.Models;
 using Overseer.Server.Integration.Machines;
 
@@ -6,9 +7,11 @@ namespace Overseer.RepRapFirmware;
 public abstract class RepRapFirmwareMachineProviderBase<TMachine> : IMachineProvider<TMachine>
   where TMachine : RepRapFirmwareMachine, new()
 {
+  protected static readonly ILog Log = LogManager.GetLogger(typeof(RepRapFirmwareMachineProviderBase<TMachine>));
+
   public event EventHandler<MachineStatusEventArgs>? StatusUpdated;
 
-  public TMachine? Machine { get; private set; }
+  public TMachine? Machine { get; protected set; }
 
   public abstract void Start<TMachine1>(int interval, TMachine1 machine)
     where TMachine1 : Machine, new();
@@ -19,7 +22,11 @@ public abstract class RepRapFirmwareMachineProviderBase<TMachine> : IMachineProv
 
   public async Task ResumeJob() => await ExecuteGCode("M24");
 
-  public virtual async Task CancelJob() => await ExecuteGCode("M0");
+  public async Task CancelJob()
+  {
+    await PauseJob();
+    await ExecuteGCode("M0");
+  }
 
   protected abstract Task ExecuteGCode(string command);
 
@@ -55,24 +62,24 @@ public abstract class RepRapFirmwareMachineProviderBase<TMachine> : IMachineProv
         .ToDictionary(x => x.HeaterIndex) ?? [];
   }
 
-  public static (int timeRemaining, double progress) CalculateCompletion(ObjectModel model, IEnumerable<Extruder> extruders, GCodeFileInfo file)
+  public static (int timeRemaining, double progress) CalculateCompletion(ObjectModel model, IEnumerable<Extruder> extruders, GCodeFileInfo? file)
   {
     if (file?.Filament?.Count > 0)
     {
       var totalFilament = file.Filament.Aggregate((product, next) => product + next);
       var totalExtruded = extruders.Select(x => x.RawPosition).Aggregate((product, next) => product + next);
-      var progress = totalExtruded / totalFilament * 100d;
+      var progress = totalFilament > 0 ? totalExtruded / totalFilament * 100d : 0;
       return (model.Job?.TimesLeft?.Filament ?? 0, Math.Max(0d, Math.Round(progress, 1)));
     }
 
     if (model.Job?.TimesLeft?.Slicer != null && model.Job.TimesLeft?.Slicer > 0 && model.Job.Duration != null)
     {
-      var estimatedTotal = model.Job.Duration + model.Job.TimesLeft?.Slicer;
-      var progress = model.Job.Duration / (double)estimatedTotal! * 100d;
+      var estimatedTotal = (model.Job.Duration + model.Job.TimesLeft?.Slicer) * 100d;
+      var progress = estimatedTotal > 0 ? model.Job.Duration / estimatedTotal * 100d : 0;
       return (model.Job?.TimesLeft?.Slicer ?? 0, Math.Max(0d, Math.Round((double)progress, 1)));
     }
 
-    var fractionPrinted = model.Job?.FilePosition / file?.Size * 100f;
+    var fractionPrinted = file?.Size > 0 ? model.Job?.FilePosition / file.Size * 100f : 0;
     return (model.Job?.TimesLeft?.File ?? 0, fractionPrinted ?? 0);
   }
 }

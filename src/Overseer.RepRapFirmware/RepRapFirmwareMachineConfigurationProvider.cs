@@ -8,7 +8,7 @@ public class RepRapFirmwareMachineConfigurationProvider(IHttpClientFactory httpC
 {
   public async Task<RepRapFirmwareMachine> Configure(Machine machine)
   {
-    var updatedMachine = (RepRapFirmwareMachine)machine;
+    var updatedMachine = new RepRapFirmwareMachine(machine);
 
     if (string.IsNullOrWhiteSpace(updatedMachine.Url))
       throw new InvalidOperationException("Machine URL is required");

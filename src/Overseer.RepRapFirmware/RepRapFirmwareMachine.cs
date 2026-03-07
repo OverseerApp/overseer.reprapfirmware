@@ -5,6 +5,24 @@ namespace Overseer.RepRapFirmware;
 [MachineType("RepRapFirmware (Standalone)")]
 public record RepRapFirmwareMachine : Machine
 {
+  public RepRapFirmwareMachine() { }
+
+  public RepRapFirmwareMachine(Machine machine)
+  {
+    if (machine is not null)
+    {
+      MachineType = machine.MachineType;
+      Id = machine.Id;
+      Name = machine.Name;
+      Disabled = machine.Disabled;
+      WebcamUrl = machine.WebcamUrl;
+      WebcamOrientation = machine.WebcamOrientation;
+      Tools = machine.Tools;
+      SortIndex = machine.SortIndex;
+      Properties = machine.Properties;
+    }
+  }
+
   public const string DefaultPassword = "reprap";
 
   [MachineProperty(displayName: "URL", description: "The URL of the machine's web interface")]
