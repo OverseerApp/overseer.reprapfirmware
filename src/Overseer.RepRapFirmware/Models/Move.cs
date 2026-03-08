@@ -1,4 +1,4 @@
-namespace Overseer.Server.RepRapFirmware.Models;
+namespace Overseer.RepRapFirmware.Models;
 
 public class Extruder
 {

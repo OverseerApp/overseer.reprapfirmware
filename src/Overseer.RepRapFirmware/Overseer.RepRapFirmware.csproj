@@ -8,11 +8,11 @@
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <Description>RepRapFirmware machine provider plugin for Overseer</Description>
   </PropertyGroup>
-  
   <ItemGroup>
-    <PackageReference Include="Overseer.Server.Integration" Version="1.1.0-rc.3" />
+    <PackageReference Include="Overseer.Server.Integration" Version="1.1.1" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.2" />
+    <PackageReference Include="log4net" Version="3.2.0" />
   </ItemGroup>
-  
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="" />
     <None Include="../../LICENSE" Pack="true" PackagePath="" />
