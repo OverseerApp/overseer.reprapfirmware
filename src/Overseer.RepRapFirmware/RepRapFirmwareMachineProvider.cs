@@ -164,9 +164,9 @@ public class RepRapFirmwareMachineProvider(IHttpClientFactory httpClientFactory)
     return status;
   }
 
-  protected override Task ExecuteGCode(string command)
+  protected override async Task ExecuteGCode(string command)
   {
-    return SendRequest("rr_gcode", new Dictionary<string, string> { { "gcode", command } });
+    using var _ = await SendRequest("rr_gcode", new Dictionary<string, string> { { "gcode", command } });
   }
 
   async Task<T?> FetchModel<T>(string? key = null, string flags = "d99fno", CancellationToken cancellation = default)
@@ -191,7 +191,12 @@ public class RepRapFirmwareMachineProvider(IHttpClientFactory httpClientFactory)
     return JsonSerializer.Deserialize<T>(content, JsonOptions);
   }
 
-  async Task<HttpResponseMessage> SendRequest(string resource, Dictionary<string, string>? query = null, CancellationToken cancellation = default, bool isRetry = false)
+  async Task<HttpResponseMessage> SendRequest(
+    string resource,
+    Dictionary<string, string>? query = null,
+    CancellationToken cancellation = default,
+    bool isRetry = false
+  )
   {
     if (Machine is null)
       throw new InvalidOperationException("Machine is not configured");
@@ -206,11 +211,11 @@ public class RepRapFirmwareMachineProvider(IHttpClientFactory httpClientFactory)
       uriBuilder.Query = queryString;
     }
 
-    var request = new HttpRequestMessage(HttpMethod.Get, uriBuilder.Uri);
+    using var request = new HttpRequestMessage(HttpMethod.Get, uriBuilder.Uri);
     request.Headers.Add("X-Session-Key", session.SessionKey.ToString());
 
     var httpClient = httpClientFactory.CreateClient();
-    var response = await httpClient.SendAsync(request, cancellation);
+    using var response = await httpClient.SendAsync(request, cancellation);
 
     // If the request failed and we haven't retried yet, invalidate the
     // cached session and try once more with a fresh connection.

@@ -66,17 +66,19 @@ public abstract class RepRapFirmwareMachineProviderBase<TMachine> : IMachineProv
   {
     if (file?.Filament?.Count > 0)
     {
-      var totalFilament = file.Filament.Aggregate((product, next) => product + next);
-      var totalExtruded = extruders.Select(x => x.RawPosition).Aggregate((product, next) => product + next);
+      var totalFilament = file.Filament.Sum();
+      var totalExtruded = extruders.Sum(x => x.RawPosition);
       var progress = totalFilament > 0 ? totalExtruded / totalFilament * 100d : 0;
       return (model.Job?.TimesLeft?.Filament ?? 0, Math.Max(0d, Math.Round(progress, 1)));
     }
 
     if (model.Job?.TimesLeft?.Slicer != null && model.Job.TimesLeft?.Slicer > 0 && model.Job.Duration != null)
     {
-      var estimatedTotal = (model.Job.Duration + model.Job.TimesLeft?.Slicer) * 100d;
-      var progress = estimatedTotal > 0 ? model.Job.Duration / estimatedTotal * 100d : 0;
-      return (model.Job?.TimesLeft?.Slicer ?? 0, Math.Max(0d, Math.Round((double)progress, 1)));
+      var duration = model.Job.Duration ?? 0d;
+      var slicerRemaining = (double)(model.Job.TimesLeft?.Slicer ?? 0);
+      var estimatedTotal = duration + slicerRemaining;
+      var progress = estimatedTotal > 0d ? duration / estimatedTotal * 100d : 0d;
+      return ((int)(model.Job.TimesLeft?.Slicer ?? 0), Math.Max(0d, Math.Round(progress, 1)));
     }
 
     var fractionPrinted = file?.Size > 0 ? model.Job?.FilePosition / file.Size * 100f : 0;

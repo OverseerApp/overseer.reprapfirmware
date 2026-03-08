@@ -26,6 +26,9 @@ public class RepRapFirmwareMachineConfigurationProvider(IHttpClientFactory httpC
     if (connectResponse == null)
       throw new InvalidOperationException("Failed to connect to machine");
 
+    if (connectResponse.Err != 0)
+      throw new InvalidOperationException($"Failed to connect to machine: rr_connect returned error code {connectResponse.Err}.");
+
     var tools = await FetchModel<IEnumerable<Tool>>(httpClient, updatedMachine.Url, connectResponse.SessionKey, "tools", string.Empty);
     var heat = await FetchModel<Heat>(httpClient, updatedMachine.Url, connectResponse.SessionKey, "heat", string.Empty);
 
@@ -59,10 +62,10 @@ public class RepRapFirmwareMachineConfigurationProvider(IHttpClientFactory httpC
       uriBuilder.Query = queryString;
     }
 
-    var request = new HttpRequestMessage(HttpMethod.Get, uriBuilder.Uri);
+    using var request = new HttpRequestMessage(HttpMethod.Get, uriBuilder.Uri);
     request.Headers.Add("X-Session-Key", sessionKey.ToString());
 
-    var response = await httpClient.SendAsync(request);
+    using var response = await httpClient.SendAsync(request);
     response.EnsureSuccessStatusCode();
 
     var content = await response.Content.ReadAsStringAsync();

@@ -8,6 +8,7 @@ public class RepRapFirmwarePluginConfiguration : IPluginConfiguration
 {
   public void ConfigureServices(IServiceCollection services)
   {
+    services.AddHttpClient();
     services.AddTransient<IMachineProvider<RepRapFirmwareMachine>, RepRapFirmwareMachineProvider>();
     services.AddTransient<IMachineProvider<DuetSoftwareFrameworkMachine>, DuetSoftwareFrameworkMachineProvider>();
     services.AddTransient<IMachineConfigurationProvider<RepRapFirmwareMachine>, RepRapFirmwareMachineConfigurationProvider>();
